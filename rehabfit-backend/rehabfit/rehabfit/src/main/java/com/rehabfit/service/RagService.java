@@ -1,0 +1,392 @@
+package com.rehabfit.service;
+
+import com.theokanning.openai.completion.chat.ChatCompletionRequest;
+import com.theokanning.openai.completion.chat.ChatCompletionResult;
+import com.theokanning.openai.completion.chat.ChatMessage;
+import com.theokanning.openai.service.OpenAiService;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+import com.rehabfit.security.JWTUtil;
+import com.rehabfit.repository.UserRepository;
+import com.rehabfit.model.User;
+import com.rehabfit.model.Progress;
+import com.rehabfit.repository.ProgressRepository;
+import java.util.stream.Collectors;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Service
+public class RagService {
+    private static final Logger log = LoggerFactory.getLogger(RagService.class);
+
+    @Value("${pinecone.api.key}")
+    private String pineconeApiKey;
+
+    @Value("${pinecone.environment}")
+    private String pineconeEnv;
+
+    @Value("${pinecone.index}")
+    private String pineconeIndex;
+
+    @Value("${pinecone.project}")
+    private String pineconeProject;
+
+    @Value("${openai.api.key}")
+    private String openAiApiKey;
+
+    @Autowired
+    private JWTUtil jwtUtil;
+
+    @Value("${youtube.api.key}")
+    private String youtubeApiKey;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private ProgressRepository progressRepository;
+
+    // Extract userId from Authorization header (JWT)
+    public String getUserIdFromAuthHeader(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new RuntimeException("Missing or invalid Authorization header");
+        }
+        String token = authHeader.substring(7); // Remove "Bearer "
+        String email = jwtUtil.validateTokenAndGetEmail(token);
+        if (email == null) {
+            throw new RuntimeException("Invalid token");
+        }
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        // Convert userId to String if it's a Long
+        return user.getId().toString();
+    }
+
+    // Personalized answer: only uses context for this user
+    public Map<String, Object> answerWithRagAndVideos(String userId, String question) {
+        try {
+            List<Double> embedding = getHuggingFaceEmbedding(question);
+            String context = queryPinecone(userId, embedding);
+
+            // Optionally fetch from DB for latest info
+            User user = userRepository.findById(Long.valueOf(userId)).orElse(null);
+            StringBuilder profileContext = new StringBuilder();
+            if (user != null) {
+                profileContext.append("User Profile:\n");
+                profileContext.append("Name: ").append(user.getName()).append("\n");
+                profileContext.append("Injury Type: ").append(user.getInjuryType()).append("\n");
+                profileContext.append("Fitness Goal: ").append(user.getFitnessGoal()).append("\n\n");
+            }
+
+            String fullContext = profileContext.toString() + context;
+            String llmRawResponse = callOpenAI(question, fullContext);
+
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String, Object> llmResponse;
+            try {
+                llmResponse = mapper.readValue(llmRawResponse, Map.class);
+            } catch (Exception e) {
+                // fallback if LLM didn't return JSON
+                return Map.of("answer", llmRawResponse);
+            }
+
+            // Extract keywords from LLM's recommended videos
+            List<Map<String, String>> llmVideos = (List<Map<String, String>>) llmResponse.get("videos");
+            List<Map<String, String>> videos = new ArrayList<>();
+            if (llmVideos != null) {
+                for (Map<String, String> vid : llmVideos) {
+                    String keyword = vid.get("title");
+                    String url = getYouTubeVideoUrl(keyword, youtubeApiKey); // get a real YouTube link
+                    if (url != null) {
+                        videos.add(Map.of("title", keyword, "url", url));
+                    }
+                }
+            }
+
+            if (!videos.isEmpty()) {
+                Map<String, Object> metadata = new HashMap<>();
+                metadata.put("type", "recommendation");
+                // Only store URLs as a list of strings for Pinecone metadata
+                List<String> videoUrls = videos.stream()
+                        .map(v -> v.get("url"))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+                metadata.put("videos", videoUrls);
+                metadata.put("text", "Recommended videos for: " + question);
+
+                String docId = "recommendations-" + userId + "-" + UUID.randomUUID();
+                List<Double> recEmbedding = getHuggingFaceEmbedding(question);
+                upsertToPinecone(userId, docId, question, recEmbedding, metadata);
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("answer", llmResponse.get("answer"));
+            response.put("videos", videos);
+            return response;
+        } catch (Exception e) {
+            e.printStackTrace(); // This prints the error to the logs
+            log.error("Error in answerWithRagAndVideos", e); // If using a logger
+            return Map.of("answer", "Sorry, I couldn't process your request right now.");
+        }
+    }
+
+    // Use HuggingFace all-MiniLM-L6-v2 embedding via local Python service
+    public List<Double> getHuggingFaceEmbedding(String text) {
+        RestTemplate restTemplate = new RestTemplate();
+        String url = "http://rehabfit-embedding:5005/embed";
+        Map<String, String> request = Map.of("text", text);
+        ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+        List<Double> embedding = (List<Double>) response.getBody().get("embedding");
+        return embedding;
+    }
+
+    public void deleteAllFromPinecone() {
+        String url = String.format("https://%s-%s.svc.%s.pinecone.io/vectors/delete", pineconeIndex, pineconeProject, pineconeEnv);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Api-Key", pineconeApiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("deleteAll", true);
+
+        RestTemplate restTemplate = new RestTemplate();
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+        restTemplate.postForEntity(url, entity, Map.class);
+    }
+
+    // Query Pinecone for this user's data only
+    private String queryPinecone(String userId, List<Double> embedding) {
+        List<Float> floatEmbedding = new ArrayList<>();
+        for (Double d : embedding) floatEmbedding.add(d.floatValue());
+
+        String url = String.format("https://%s-%s.svc.%s.pinecone.io/query", pineconeIndex, pineconeProject, pineconeEnv);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Api-Key", pineconeApiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> filter = new HashMap<>();
+        filter.put("userId", userId);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("vector", floatEmbedding);
+        body.put("topK", 5);
+        body.put("includeMetadata", true);
+        body.put("filter", filter);
+
+        RestTemplate restTemplate = new RestTemplate();
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+        ResponseEntity<Map> response = restTemplate.postForEntity(url, entity, Map.class);
+
+        StringBuilder sb = new StringBuilder();
+        if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+            List<Map<String, Object>> matches = (List<Map<String, Object>>) response.getBody().get("matches");
+            if (matches != null) {
+                for (Map<String, Object> match : matches) {
+                    Map<String, Object> metadata = (Map<String, Object>) match.get("metadata");
+                    if (metadata != null && metadata.containsKey("text")) {
+                        sb.append(metadata.get("text")).append("\n");
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Upserts a document into Pinecone for a specific user.
+     * @param userId The user to associate this data with
+     * @param id Unique ID for the vector/document
+     * @param text The text to store as metadata
+     * @param embedding The embedding vector (List<Double>)
+     */
+    public void upsertToPinecone(String userId, String id, String text, List<Double> embedding, Map<String, Object> metadata) {
+        List<Float> floatEmbedding = new ArrayList<>();
+        for (Double d : embedding) floatEmbedding.add(d.floatValue());
+
+        String url = String.format("https://%s-%s.svc.%s.pinecone.io/vectors/upsert", pineconeIndex, pineconeProject, pineconeEnv);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Api-Key", pineconeApiKey);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        Map<String, Object> vector = new HashMap<>();
+        vector.put("id", id);
+        vector.put("values", floatEmbedding);
+
+        // Fix: ensure metadata is not null before using it
+        if (metadata == null) metadata = new HashMap<>();
+        metadata.put("text", text);
+        metadata.put("userId", userId); // associate with user
+        vector.put("metadata", metadata);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("vectors", List.of(vector));
+
+        RestTemplate restTemplate = new RestTemplate();
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+        restTemplate.postForEntity(url, entity, Map.class);
+    }
+
+    /**
+     * Upsert the user's name for personalization.
+     * Call this after registration or login.
+     */
+    public void upsertUserProfile(String userId, String userName, String injuryType, String fitnessGoal) {
+        String docId = "user-profile-" + userId;
+        String text = "Name: " + userName + ". Injury Type: " + injuryType + ". Fitness Goal: " + fitnessGoal + ".";
+        List<Double> embedding = getHuggingFaceEmbedding(text);
+        upsertToPinecone(userId, docId, text, embedding, null);
+    }
+
+    public void upsertProgressToPinecone(String userId, Progress progress) {
+        String docId = "progress-" + userId + "-" + progress.getId();
+        String text = "Date: " + progress.getDate() + ", Pain: " + progress.getPainLevel() +
+                      ", Mobility: " + progress.getMobility() + ", Strength: " + progress.getStrength();
+        List<Double> embedding = getHuggingFaceEmbedding(text);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("userId", userId);
+        metadata.put("type", "progress");
+        metadata.put("date", progress.getDate().toString());
+        upsertToPinecone(userId, docId, text, embedding, metadata);
+    }
+
+    @SuppressWarnings("unchecked")
+    public String getYouTubeVideoUrl(String query, String apiKey) {
+        String apiUrl = "https://www.googleapis.com/youtube/v3/search"
+            + "?part=snippet"
+            + "&maxResults=1"
+            + "&q=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
+            + "&type=video"
+            + "&key=" + apiKey;
+
+        RestTemplate restTemplate = new RestTemplate();
+        try {
+            Map<String, Object> response = restTemplate.getForObject(apiUrl, Map.class);
+            if (response == null) return null;
+            List<Map<String, Object>> items = (List<Map<String, Object>>) response.get("items");
+            if (items != null && !items.isEmpty()) {
+                Map<String, Object> item = items.get(0);
+                Map<String, Object> id = (Map<String, Object>) item.get("id");
+                String videoId = id != null ? (String) id.get("videoId") : null;
+                if (videoId != null && !videoId.isEmpty()) {
+                    return "https://www.youtube.com/watch?v=" + videoId;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            // If quota exceeded or any error, return a mock video URL
+            System.out.println("YouTube quota exceeded or error: " + e.getMessage());
+            return "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; // <-- mock/fallback video
+        }
+    }
+
+    // --- FIX: callOpenAI should accept the prompt directly ---
+    private String callOpenAI(String question, String prompt) {
+        OpenAiService service = new OpenAiService(openAiApiKey);
+
+        ChatMessage systemMessage = new ChatMessage("system", "You are a helpful rehab assistant. Use the provided context to answer.");
+        ChatMessage userMessage = new ChatMessage("user", prompt);
+
+        ChatCompletionRequest request = ChatCompletionRequest.builder()
+            .model("gpt-3.5-turbo")
+            .messages(List.of(systemMessage, userMessage))
+            .maxTokens(512)
+            .temperature(0.2)
+            .build();
+
+        ChatCompletionResult result = service.createChatCompletion(request);
+        return result.getChoices().get(0).getMessage().getContent();
+    }
+
+    // --- DASHBOARD DATA ---
+
+   public Map<String, Object> getDashboardData(String userId) {
+    User user = userRepository.findById(Long.valueOf(userId)).orElse(null);
+    String createdAt = (user != null && user.getCreatedAt() != null) ? user.getCreatedAt().toString() : "";
+
+    // Fetch progress data from DB
+    List<Map<String, Object>> progressData = getProgressDataForUser(userId);
+
+    // Build a summary of progress for the LLM
+    StringBuilder progressSummary = new StringBuilder();
+    for (Map<String, Object> entry : progressData) {
+        progressSummary.append(String.format(
+            "Date: %s, Pain: %s, Mobility: %s, Strength: %s\n",
+            entry.get("date"), entry.get("painLevel"), entry.get("mobility"), entry.get("strength")
+        ));
+    }
+
+    // Query Pinecone for context
+    List<Double> embedding = getHuggingFaceEmbedding("dashboard summary for user");
+    String pineconeContext = queryPinecone(userId, embedding);
+
+    // Compose prompt with actual progress and recommendations
+    String prompt = "You are a rehab assistant. Given the following user profile, progress logs, and previous recommendations, respond ONLY with a JSON object with these keys:\n" +
+        "- estimatedRecovery: string\n" +
+        "- dietPlan: array of strings\n" +
+        "- llmSummary: array of strings (summarize recent progress and give actionable advice)\n" +
+        "User Profile:\n" +
+        (user != null ? String.format("Name: %s, Injury Type: %s, Fitness Goal: %s\n", user.getName(), user.getInjuryType(), user.getFitnessGoal()) : "") +
+        "Progress Logs:\n" + (progressSummary.length() > 0 ? progressSummary : "No progress yet.\n") +
+        "Previous Recommendations:\n" + pineconeContext + "\n" +
+        "Example:\n" +
+        "{ \"estimatedRecovery\": \"4 weeks\", \"dietPlan\": [\"Eat more protein\", \"Stay hydrated\"], \"llmSummary\": [\"Mobility improved this week. Keep stretching!\", \"Try to reduce pain with ice therapy.\"] }\n" +
+        "If there is no user data, return a generic JSON object with default advice. Return ONLY valid JSON. Do not include any explanation or extra text.";
+
+    String llmRaw = callOpenAI("dashboard summary", prompt);
+    System.out.println("LLM RAW OUTPUT: " + llmRaw);
+
+    ObjectMapper mapper = new ObjectMapper();
+    Map<String, Object> llmData = new HashMap<>();
+    try {
+        llmData = mapper.readValue(llmRaw, Map.class);
+    } catch (Exception e) {
+        llmData.put("estimatedRecovery", "N/A");
+        llmData.put("dietPlan", List.of());
+        llmData.put("llmSummary", List.of());
+    }
+
+    int recoveryPercentage = calculateRecoveryPercentage(progressData);
+
+    Map<String, Object> result = new HashMap<>();
+    result.put("createdAt", createdAt);
+    result.put("estimatedRecovery", llmData.getOrDefault("estimatedRecovery", "N/A"));
+    result.put("dietPlan", llmData.getOrDefault("dietPlan", List.of()));
+    result.put("llmSummary", llmData.getOrDefault("llmSummary", List.of()));
+    result.put("progressData", progressData);
+    result.put("recoveryPercentage", recoveryPercentage);
+    return result;
+}
+
+    private List<Map<String, Object>> getProgressDataForUser(String userId) {
+        List<Progress> progresses = progressRepository.findByUserId(userId);
+        List<Map<String, Object>> data = new ArrayList<>();
+        for (Progress p : progresses) {
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("date", p.getDate().toString());
+            entry.put("painLevel", p.getPainLevel());
+            entry.put("mobility", p.getMobility());
+            entry.put("strength", p.getStrength());
+            data.add(entry);
+        }
+        return data;
+    }
+
+    private int calculateRecoveryPercentage(List<Map<String, Object>> progressData) {
+        if (progressData.isEmpty()) return 0;
+        double avgMobility = progressData.stream()
+            .mapToInt(e -> (int) e.getOrDefault("mobility", 0))
+            .average().orElse(0.0);
+        return (int) Math.round((avgMobility / 10.0) * 100);
+    }
+}

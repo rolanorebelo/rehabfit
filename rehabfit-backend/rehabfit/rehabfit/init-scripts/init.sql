@@ -1,0 +1,1 @@
+CREATE ROLE rolano WITH LOGIN PASSWORD 'rolano123';
