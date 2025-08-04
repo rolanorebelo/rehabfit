@@ -80,12 +80,16 @@ export default function RegisterPage() {
     setIsLoading(true);
     try {
       const response = await API.post('/auth/register', {
-        name: formData.fullName,
-        email: formData.email,
-        password: formData.password,
-        injuryType: formData.injuryType,
-        fitnessGoal: formData.fitnessGoal
-      });
+  name: formData.fullName, // <-- change from fullName to name
+  email: formData.email,
+  password: formData.password,
+  injuryType: formData.injuryType,
+  fitnessGoal: formData.fitnessGoal,
+  age: formData.age,
+  weight: formData.weight,
+  height: formData.height,
+  activityLevel: formData.activityLevel
+});
       toast.success("Welcome to RehabFit! Please sign in to start your recovery journey.");
       navigate("/login");
     } catch (error) {

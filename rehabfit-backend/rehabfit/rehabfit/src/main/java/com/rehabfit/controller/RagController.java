@@ -5,7 +5,7 @@ import com.rehabfit.service.RagService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
-
+import org.springframework.beans.factory.annotation.Value;
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
@@ -16,6 +16,9 @@ public class RagController {
 
     @Autowired
     private RagService ragService;
+
+    @Value("${youtube.api.key}")
+    private String youtubeApiKey;
 
     @PostMapping("/upsert-chat")
     public ResponseEntity<?> upsertChat(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
@@ -51,8 +54,7 @@ public ResponseEntity<?> deleteAllPinecone() {
 
 @GetMapping("/test-youtube")
 public ResponseEntity<?> testYouTube(@RequestParam String query) {
-    String apiKey = "AIzaSyD_OhmxPJ1VKtKlkWfIjsag7W9trowRjt4"; // or inject via @Value
-    String url = ragService.getYouTubeVideoUrl(query, apiKey);
-    return ResponseEntity.ok(Map.of("url", url));
+    List<Map<String, String>> urls = ragService.getYouTubeVideos(query, youtubeApiKey, 0);
+    return ResponseEntity.ok(Map.of("urls", urls));
 }
 }

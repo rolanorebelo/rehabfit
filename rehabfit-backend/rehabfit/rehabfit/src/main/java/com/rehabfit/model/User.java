@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.Set;
 
 @Entity
@@ -21,7 +22,7 @@ public class User {
     @org.hibernate.annotations.CreationTimestamp
     private LocalDateTime createdAt;
 
-     public LocalDateTime getCreatedAt() {
+    public LocalDateTime getCreatedAt() {
         return createdAt;
     }
 
@@ -39,6 +40,20 @@ public class User {
     private String injuryType;
     private String fitnessGoal;
 
+    // Additional profile fields
+    private Integer age;
+    
+    private Double weight; // in kg
+    
+    private Double height; // in cm
+    
+    private String activityLevel; // sedentary, light, moderate, active, athlete
+    
+    @Column(columnDefinition = "TEXT")
+    private String injuryDescription;
+    
+    private LocalDate injuryDate;
+
     @ElementCollection
     @CollectionTable(
         name = "user_equipment_list",
@@ -46,4 +61,23 @@ public class User {
     )
     @Column(name = "equipment")
     private Set<String> equipmentList;
+
+    // Getters and setters for new fields
+    public Integer getAge() { return age; }
+    public void setAge(Integer age) { this.age = age; }
+
+    public Double getWeight() { return weight; }
+    public void setWeight(Double weight) { this.weight = weight; }
+
+    public Double getHeight() { return height; }
+    public void setHeight(Double height) { this.height = height; }
+
+    public String getActivityLevel() { return activityLevel; }
+    public void setActivityLevel(String activityLevel) { this.activityLevel = activityLevel; }
+
+    public String getInjuryDescription() { return injuryDescription; }
+    public void setInjuryDescription(String injuryDescription) { this.injuryDescription = injuryDescription; }
+
+    public LocalDate getInjuryDate() { return injuryDate; }
+    public void setInjuryDate(LocalDate injuryDate) { this.injuryDate = injuryDate; }
 }

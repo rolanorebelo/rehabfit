@@ -104,9 +104,9 @@ public class RagService {
             if (llmVideos != null) {
                 for (Map<String, String> vid : llmVideos) {
                     String keyword = vid.get("title");
-                    String url = getYouTubeVideoUrl(keyword, youtubeApiKey); // get a real YouTube link
-                    if (url != null) {
-                        videos.add(Map.of("title", keyword, "url", url));
+                    List<Map<String, String>> urls = getYouTubeVideos(keyword, youtubeApiKey, 0); // get real YouTube links
+                    for (Map<String, String> url : urls) {
+                        videos.add(Map.of("title", keyword, "url", url.get("url")));
                     }
                 }
             }
@@ -261,34 +261,36 @@ public class RagService {
     }
 
     @SuppressWarnings("unchecked")
-    public String getYouTubeVideoUrl(String query, String apiKey) {
-        String apiUrl = "https://www.googleapis.com/youtube/v3/search"
-            + "?part=snippet"
-            + "&maxResults=1"
-            + "&q=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
-            + "&type=video"
-            + "&key=" + apiKey;
+public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, int maxResults) {
+    String apiUrl = "https://www.googleapis.com/youtube/v3/search"
+        + "?part=snippet"
+        + "&maxResults=" + maxResults
+        + "&q=" + URLEncoder.encode(query, StandardCharsets.UTF_8)
+        + "&type=video"
+        + "&key=" + apiKey;
 
-        RestTemplate restTemplate = new RestTemplate();
-        try {
-            Map<String, Object> response = restTemplate.getForObject(apiUrl, Map.class);
-            if (response == null) return null;
-            List<Map<String, Object>> items = (List<Map<String, Object>>) response.get("items");
-            if (items != null && !items.isEmpty()) {
-                Map<String, Object> item = items.get(0);
+    RestTemplate restTemplate = new RestTemplate();
+    List<Map<String, String>> videos = new ArrayList<>();
+    try {
+        Map<String, Object> response = restTemplate.getForObject(apiUrl, Map.class);
+        if (response == null) return videos;
+        List<Map<String, Object>> items = (List<Map<String, Object>>) response.get("items");
+        if (items != null && !items.isEmpty()) {
+            for (Map<String, Object> item : items) {
                 Map<String, Object> id = (Map<String, Object>) item.get("id");
+                Map<String, Object> snippet = (Map<String, Object>) item.get("snippet");
                 String videoId = id != null ? (String) id.get("videoId") : null;
+                String title = snippet != null ? (String) snippet.get("title") : query;
                 if (videoId != null && !videoId.isEmpty()) {
-                    return "https://www.youtube.com/watch?v=" + videoId;
+                    videos.add(Map.of("title", title, "url", "https://www.youtube.com/watch?v=" + videoId));
                 }
             }
-            return null;
-        } catch (Exception e) {
-            // If quota exceeded or any error, return a mock video URL
-            System.out.println("YouTube quota exceeded or error: " + e.getMessage());
-            return "https://www.youtube.com/watch?v=dQw4w9WgXcQ"; // <-- mock/fallback video
         }
+    } catch (Exception e) {
+        System.out.println("YouTube API error: " + e.getMessage());
     }
+    return videos;
+}
 
     // --- FIX: callOpenAI should accept the prompt directly ---
     private String callOpenAI(String question, String prompt) {
@@ -317,6 +319,20 @@ public class RagService {
     // Fetch progress data from DB
     List<Map<String, Object>> progressData = getProgressDataForUser(userId);
 
+    // 1. Videos from user profile
+    List<Map<String, String>> videos = new ArrayList<>();
+    if (user != null) {
+        List<String> keywords = new ArrayList<>();
+        if (user.getInjuryType() != null) keywords.add(user.getInjuryType() + " rehab exercise");
+        if (user.getFitnessGoal() != null) keywords.add(user.getFitnessGoal() + " exercise");
+
+        for (String keyword : keywords) {
+            videos.addAll(getYouTubeVideos(keyword, youtubeApiKey, 3)); // 3 per keyword
+        }
+    }
+
+    System.out.println("Dashboard videos for user " + userId + " (profile): " + videos);
+
     // Build a summary of progress for the LLM
     StringBuilder progressSummary = new StringBuilder();
     for (Map<String, Object> entry : progressData) {
@@ -330,17 +346,18 @@ public class RagService {
     List<Double> embedding = getHuggingFaceEmbedding("dashboard summary for user");
     String pineconeContext = queryPinecone(userId, embedding);
 
-    // Compose prompt with actual progress and recommendations
+    // Compose prompt for LLM
     String prompt = "You are a rehab assistant. Given the following user profile, progress logs, and previous recommendations, respond ONLY with a JSON object with these keys:\n" +
         "- estimatedRecovery: string\n" +
         "- dietPlan: array of strings\n" +
         "- llmSummary: array of strings (summarize recent progress and give actionable advice)\n" +
+        "- videos: array of objects with 'title' (string) for recommended exercise video topics\n" +
         "User Profile:\n" +
         (user != null ? String.format("Name: %s, Injury Type: %s, Fitness Goal: %s\n", user.getName(), user.getInjuryType(), user.getFitnessGoal()) : "") +
         "Progress Logs:\n" + (progressSummary.length() > 0 ? progressSummary : "No progress yet.\n") +
         "Previous Recommendations:\n" + pineconeContext + "\n" +
         "Example:\n" +
-        "{ \"estimatedRecovery\": \"4 weeks\", \"dietPlan\": [\"Eat more protein\", \"Stay hydrated\"], \"llmSummary\": [\"Mobility improved this week. Keep stretching!\", \"Try to reduce pain with ice therapy.\"] }\n" +
+        "{ \"estimatedRecovery\": \"4 weeks\", \"dietPlan\": [\"Eat more protein\", \"Stay hydrated\"], \"llmSummary\": [\"Mobility improved this week. Keep stretching!\", \"Try to reduce pain with ice therapy.\"], \"videos\": [{\"title\": \"ankle rehab exercises\"}, {\"title\": \"mobility stretches\"}] }\n" +
         "If there is no user data, return a generic JSON object with default advice. Return ONLY valid JSON. Do not include any explanation or extra text.";
 
     String llmRaw = callOpenAI("dashboard summary", prompt);
@@ -356,6 +373,19 @@ public class RagService {
         llmData.put("llmSummary", List.of());
     }
 
+    // 2. Videos from LLM recommendations
+    if (llmData.containsKey("videos")) {
+        List<Map<String, String>> llmVideos = (List<Map<String, String>>) llmData.get("videos");
+        if (llmVideos != null) {
+            for (Map<String, String> vid : llmVideos) {
+                String keyword = vid.get("title");
+                if (keyword != null && !keyword.isBlank()) {
+                    videos.addAll(getYouTubeVideos(keyword, youtubeApiKey, 2)); // 2 per LLM keyword
+                }
+            }
+        }
+    }
+
     int recoveryPercentage = calculateRecoveryPercentage(progressData);
 
     Map<String, Object> result = new HashMap<>();
@@ -365,6 +395,7 @@ public class RagService {
     result.put("llmSummary", llmData.getOrDefault("llmSummary", List.of()));
     result.put("progressData", progressData);
     result.put("recoveryPercentage", recoveryPercentage);
+    result.put("videos", videos);
     return result;
 }
 

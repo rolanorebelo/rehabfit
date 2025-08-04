@@ -30,9 +30,15 @@ services:
       embedding-service:
         condition: service_started
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://rehabfit-postgres:5432/rolano
-      SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: rolano123
+        SPRING_DATASOURCE_URL: jdbc:postgresql://rehabfit-postgres:5432/${POSTGRES_DB}
+        SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+        SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+        PINECONE_API_KEY: ${PINECONE_API_KEY}
+        PINECONE_ENVIRONMENT: ${PINECONE_ENVIRONMENT}
+        PINECONE_INDEX: ${PINECONE_INDEX}
+        PINECONE_PROJECT: ${PINECONE_PROJECT}
+        YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
+        OPENAI_API_KEY: ${OPENAI_API_KEY}
     command: ["java", "-jar", "target/rehabfit-0.0.1-SNAPSHOT.jar"]
 
   embedding-service:

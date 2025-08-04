@@ -31,9 +31,10 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .cors(cors -> {}) // 👈 Enable CORS
+            .cors(cors -> {}) // Enable CORS
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**", "/api/rag/pinecone/delete-all").permitAll()
+                .requestMatchers("/auth/register", "/auth/login", "/auth/google").permitAll()
+                .requestMatchers("/auth/profile", "/auth/me","/api/rag/dashboard").authenticated()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

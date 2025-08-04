@@ -26,7 +26,9 @@ import {
   AlertTriangle,
   Clock,
   Flame,
-  ArrowRight 
+  ArrowRight,
+  Save,
+  X 
 } from "lucide-react";
 
 // Dark mode toggle component
@@ -142,14 +144,33 @@ export default function DashboardPage() {
   const [averagePainReduction, setAveragePainReduction] = useState(0);
   const [weeklyGoalProgress, setWeeklyGoalProgress] = useState(0);
 
+  // Profile editing state
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    injuryType: "",
+    fitnessGoal: "",
+    age: "",
+    weight: "",
+    height: "",
+    activityLevel: "",
+    injuryDescription: "",
+    injuryDate: ""
+  });
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
   const fetchDashboardData = () => {
     API.get("/api/rag/dashboard")
       .then((res) => {
+          console.log("Dashboard API response:", res.data); // <-- Add this line
         setEstimatedRecovery(res.data.estimatedRecovery || "N/A");
         setDietPlan(res.data.dietPlan || []);
         setLlmSummary(res.data.llmSummary || []);
         setProgressData(res.data.progressData || []);
         setRecoveryPercentage(res.data.recoveryPercentage || 0);
+
+        // Add this line:
+      setRecommendedVideos(res.data.videos || []);
         
         // Calculate enhanced stats
         calculateEnhancedStats(res.data.progressData || []);
@@ -162,11 +183,9 @@ export default function DashboardPage() {
 
   const calculateEnhancedStats = (data) => {
     if (data.length > 0) {
-      // Calculate daily streak (mock for now)
       setDailyStreak(Math.floor(Math.random() * 15) + 5);
       setTotalSessions(data.length);
       
-      // Calculate average pain reduction
       const firstEntry = data[0];
       const lastEntry = data[data.length - 1];
       if (firstEntry && lastEntry) {
@@ -174,9 +193,64 @@ export default function DashboardPage() {
         setAveragePainReduction(Math.max(0, Math.round(reduction)));
       }
       
-      // Weekly goal progress (mock)
       setWeeklyGoalProgress(Math.floor(Math.random() * 40) + 60);
     }
+  };
+
+  const handleProfileFormChange = (e) => {
+    const { name, value } = e.target;
+    setProfileForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true);
+    try {
+      const response = await API.put("/auth/profile", {
+        name: profileForm.name,
+        injuryType: profileForm.injuryType,
+        fitnessGoal: profileForm.fitnessGoal,
+        age: profileForm.age ? parseInt(profileForm.age) : null,
+        weight: profileForm.weight ? parseFloat(profileForm.weight) : null,
+        height: profileForm.height ? parseFloat(profileForm.height) : null,
+        activityLevel: profileForm.activityLevel,
+        injuryDescription: profileForm.injuryDescription
+      });
+
+      if (response.data && response.data.user) {
+        setUser(response.data.user);
+        setIsEditingProfile(false);
+        toast.success("Profile updated successfully!");
+        
+        // Refresh dashboard data
+        fetchDashboardData();
+      }
+    } catch (error) {
+      console.error("Profile update error:", error);
+      toast.error(error.response?.data?.message || "Failed to update profile");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    // Reset form to current user data
+    if (user) {
+      setProfileForm({
+        name: user.name || "",
+        injuryType: user.injuryType || "",
+        fitnessGoal: user.fitnessGoal || "",
+        age: user.age ? user.age.toString() : "",
+        weight: user.weight ? user.weight.toString() : "",
+        height: user.height ? user.height.toString() : "",
+        activityLevel: user.activityLevel || "",
+        injuryDescription: user.injuryDescription || "",
+        injuryDate: user.injuryDate || ""
+      });
+    }
+    setIsEditingProfile(false);
   };
 
   useEffect(() => {
@@ -194,6 +268,19 @@ export default function DashboardPage() {
       .then((res) => {
         setUser(res.data);
         setInjuryDate(res.data.createdAt ? res.data.createdAt.split("T")[0] : "2024-06-01");
+        
+        // Initialize profile form with user data
+        setProfileForm({
+          name: res.data.name || "",
+          injuryType: res.data.injuryType || "",
+          fitnessGoal: res.data.fitnessGoal || "",
+          age: res.data.age ? res.data.age.toString() : "",
+          weight: res.data.weight ? res.data.weight.toString() : "",
+          height: res.data.height ? res.data.height.toString() : "",
+          activityLevel: res.data.activityLevel || "",
+          injuryDescription: res.data.injuryDescription || "",
+          injuryDate: res.data.injuryDate || ""
+        });
       })
       .catch((err) => {
         console.error(err);
@@ -212,11 +299,11 @@ export default function DashboardPage() {
   };
 
   const handleSectionChange = (key) => {
-    setSection(key);
-    if (key === "overview") {
-      fetchDashboardData();
-    }
-  };
+  setSection(key);
+  if (key === "overview" || key === "videos") {
+    fetchDashboardData();
+  }
+};
 
   const getDaysInRecovery = () => {
     if (!injuryDate) return 0;
@@ -647,9 +734,42 @@ export default function DashboardPage() {
           {section === "profile" && (
             <div className="space-y-8">
               <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-lg border border-gray-100 dark:border-gray-700">
-                <div className="flex items-center gap-2 mb-6">
-                  <User className="h-6 w-6 text-emerald-600" />
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Profile & Settings</h2>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-2">
+                    <User className="h-6 w-6 text-emerald-600" />
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Profile & Settings</h2>
+                  </div>
+                  {!isEditingProfile ? (
+                    <button
+                      onClick={() => setIsEditingProfile(true)}
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Edit Profile
+                    </button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveProfile}
+                        disabled={isSavingProfile}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        {isSavingProfile ? (
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        {isSavingProfile ? "Saving..." : "Save Changes"}
+                      </button>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="flex items-center gap-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="grid lg:grid-cols-2 gap-8">
@@ -661,8 +781,13 @@ export default function DashboardPage() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Full Name</label>
                         <input
                           type="text"
-                          value={user?.name || ""}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                          name="name"
+                          value={isEditingProfile ? profileForm.name : (user?.name || "")}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
                           placeholder="Enter your full name"
                         />
                       </div>
@@ -680,7 +805,13 @@ export default function DashboardPage() {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Age</label>
                           <input
                             type="number"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                            name="age"
+                            value={isEditingProfile ? profileForm.age : (user?.age || "")}
+                            onChange={handleProfileFormChange}
+                            disabled={!isEditingProfile}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                              isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                            }`}
                             placeholder="25"
                           />
                         </div>
@@ -688,7 +819,13 @@ export default function DashboardPage() {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Weight (kg)</label>
                           <input
                             type="number"
-                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                            name="weight"
+                            value={isEditingProfile ? profileForm.weight : (user?.weight || "")}
+                            onChange={handleProfileFormChange}
+                            disabled={!isEditingProfile}
+                            className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                              isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                            }`}
                             placeholder="70"
                           />
                         </div>
@@ -697,7 +834,13 @@ export default function DashboardPage() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Height (cm)</label>
                         <input
                           type="number"
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                          name="height"
+                          value={isEditingProfile ? profileForm.height : (user?.height || "")}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
                           placeholder="175"
                         />
                       </div>
@@ -710,8 +853,16 @@ export default function DashboardPage() {
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Injury Type</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500">
-                          <option>{user?.injuryType || "Select injury type"}</option>
+                        <select
+                          name="injuryType"
+                          value={isEditingProfile ? profileForm.injuryType : (user?.injuryType || "")}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
+                        >
+                          <option value="">Select injury type</option>
                           <option value="knee">Knee Injury</option>
                           <option value="shoulder">Shoulder Injury</option>
                           <option value="back">Back Pain</option>
@@ -722,8 +873,16 @@ export default function DashboardPage() {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Fitness Goal</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500">
-                          <option>{user?.fitnessGoal || "Select fitness goal"}</option>
+                        <select
+                          name="fitnessGoal"
+                          value={isEditingProfile ? profileForm.fitnessGoal : (user?.fitnessGoal || "")}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
+                        >
+                          <option value="">Select fitness goal</option>
                           <option value="recovery">Full Recovery</option>
                           <option value="strength">Strength Building</option>
                           <option value="mobility">Improved Mobility</option>
@@ -734,8 +893,16 @@ export default function DashboardPage() {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Activity Level (Before Injury)</label>
-                        <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500">
-                          <option>Select activity level</option>
+                        <select
+                          name="activityLevel"
+                          value={isEditingProfile ? profileForm.activityLevel : (user?.activityLevel || "")}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
+                        >
+                          <option value="">Select activity level</option>
                           <option value="sedentary">Sedentary (Little to no exercise)</option>
                           <option value="light">Lightly Active (1-3 days/week)</option>
                           <option value="moderate">Moderately Active (3-5 days/week)</option>
@@ -747,15 +914,26 @@ export default function DashboardPage() {
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Injury Date</label>
                         <input
                           type="date"
-                          value={injuryDate}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                          name="injuryDate"
+                          value={isEditingProfile ? profileForm.injuryDate : (user?.injuryDate || injuryDate)}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Injury Description</label>
                         <textarea
+                          name="injuryDescription"
+                          value={isEditingProfile ? profileForm.injuryDescription : (user?.injuryDescription || "")}
+                          onChange={handleProfileFormChange}
+                          disabled={!isEditingProfile}
                           rows={3}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                          className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-emerald-500 ${
+                            isEditingProfile ? 'bg-white dark:bg-gray-700' : 'bg-gray-50 dark:bg-gray-600'
+                          }`}
                           placeholder="Describe how the injury occurred and current symptoms..."
                         ></textarea>
                       </div>
@@ -763,16 +941,21 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                  <div className="flex gap-4">
-                    <button className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg font-medium transition-all">
-                      Save Changes
-                    </button>
-                    <button className="border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 px-6 py-2 rounded-lg font-medium transition-all">
-                      Cancel
-                    </button>
+                {isEditingProfile && (
+                  <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-start gap-3">
+                        <Heart className="h-5 w-5 text-blue-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-semibold text-blue-900 dark:text-blue-300 mb-1">Profile Update</h4>
+                          <p className="text-sm text-blue-800 dark:text-blue-300">
+                            Updating your profile will help our AI provide more personalized recommendations for your recovery journey.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Additional Settings */}
