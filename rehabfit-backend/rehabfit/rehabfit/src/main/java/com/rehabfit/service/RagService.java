@@ -299,31 +299,43 @@ public class RagService {
      * @param embedding The embedding vector (List<Double>)
      */
     public void upsertToPinecone(String userId, String id, String text, List<Double> embedding, Map<String, Object> metadata) {
-        List<Float> floatEmbedding = new ArrayList<>();
-        for (Double d : embedding) floatEmbedding.add(d.floatValue());
+        try {
+            List<Float> floatEmbedding = new ArrayList<>();
+            for (Double d : embedding) floatEmbedding.add(d.floatValue());
 
-        String url = String.format("https://%s-%s.svc.%s.pinecone.io/vectors/upsert", pineconeIndex, pineconeProject, pineconeEnv);
+            // Check if embedding contains only zeros (dummy embedding from unavailable service)
+            boolean allZeros = floatEmbedding.stream().allMatch(f -> f == 0.0f);
+            if (allZeros) {
+                System.err.println("Skipping Pinecone upsert - embedding service unavailable (all zeros)");
+                return;
+            }
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Api-Key", pineconeApiKey);
-        headers.setContentType(MediaType.APPLICATION_JSON);
+            String url = String.format("https://%s-%s.svc.%s.pinecone.io/vectors/upsert", pineconeIndex, pineconeProject, pineconeEnv);
 
-        Map<String, Object> vector = new HashMap<>();
-        vector.put("id", id);
-        vector.put("values", floatEmbedding);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Api-Key", pineconeApiKey);
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
-        // Fix: ensure metadata is not null before using it
-        if (metadata == null) metadata = new HashMap<>();
-        metadata.put("text", text);
-        metadata.put("userId", userId); // associate with user
-        vector.put("metadata", metadata);
+            Map<String, Object> vector = new HashMap<>();
+            vector.put("id", id);
+            vector.put("values", floatEmbedding);
 
-        Map<String, Object> body = new HashMap<>();
-        body.put("vectors", List.of(vector));
+            // Fix: ensure metadata is not null before using it
+            if (metadata == null) metadata = new HashMap<>();
+            metadata.put("text", text);
+            metadata.put("userId", userId); // associate with user
+            vector.put("metadata", metadata);
 
-        RestTemplate restTemplate = new RestTemplate();
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
-        restTemplate.postForEntity(url, entity, Map.class);
+            Map<String, Object> body = new HashMap<>();
+            body.put("vectors", List.of(vector));
+
+            RestTemplate restTemplate = new RestTemplate();
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            restTemplate.postForEntity(url, entity, Map.class);
+        } catch (Exception e) {
+            System.err.println("Failed to upsert to Pinecone: " + e.getMessage());
+            // Continue without Pinecone - app still works
+        }
     }
 
     /**
