@@ -34,6 +34,7 @@ public class SecurityConfig {
             .cors(cors -> {}) // Enable CORS
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/register", "/auth/login", "/auth/google").permitAll()
+                .requestMatchers("/api/rag/chat/**").permitAll() // Allow chatbot without auth
                 .requestMatchers("/auth/profile", "/auth/me","/api/rag/dashboard").authenticated()
                 .anyRequest().authenticated()
             )

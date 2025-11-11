@@ -9,4 +9,6 @@ import lombok.AllArgsConstructor;
 @AllArgsConstructor
 public class GoogleTokenRequest {
     private String token;
+    private String email;
+    private String name;
 }

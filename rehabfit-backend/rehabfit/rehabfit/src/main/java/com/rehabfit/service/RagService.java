@@ -2,6 +2,7 @@ package com.rehabfit.service;
 
 import com.theokanning.openai.completion.chat.ChatCompletionRequest;
 import com.theokanning.openai.completion.chat.ChatCompletionResult;
+import com.theokanning.openai.completion.chat.ChatCompletionChunk;
 import com.theokanning.openai.completion.chat.ChatMessage;
 import com.theokanning.openai.service.OpenAiService;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.rehabfit.security.JWTUtil;
 import com.rehabfit.repository.UserRepository;
 import com.rehabfit.model.User;
@@ -19,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.io.IOException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -135,6 +138,81 @@ public class RagService {
             e.printStackTrace(); // This prints the error to the logs
             log.error("Error in answerWithRagAndVideos", e); // If using a logger
             return Map.of("answer", "Sorry, I couldn't process your request right now.");
+        }
+    }
+
+    // Streaming version of answerWithRagAndVideos
+    public void answerWithRagAndVideosStreaming(String userId, String question, SseEmitter emitter) {
+        try {
+            List<Double> embedding = getHuggingFaceEmbedding(question);
+            String context = queryPinecone(userId, embedding);
+
+            // Optionally fetch from DB for latest info
+            User user = userRepository.findById(Long.valueOf(userId)).orElse(null);
+            StringBuilder profileContext = new StringBuilder();
+            if (user != null) {
+                profileContext.append("You are assisting ").append(user.getName()).append(".\n");
+                if (user.getInjuryType() != null && !user.getInjuryType().isEmpty()) {
+                    profileContext.append("They have a ").append(user.getInjuryType()).append(" injury.\n");
+                }
+                if (user.getInjuryDescription() != null && !user.getInjuryDescription().isEmpty()) {
+                    profileContext.append("Injury details: ").append(user.getInjuryDescription()).append(".\n");
+                }
+                if (user.getFitnessGoal() != null && !user.getFitnessGoal().isEmpty()) {
+                    profileContext.append("Their fitness goal is ").append(user.getFitnessGoal()).append(".\n");
+                }
+                profileContext.append("\nPrevious conversation context:\n");
+            }
+
+            String fullContext = profileContext.toString() + context;
+            
+            // Stream the response
+            callOpenAIStreaming(question, fullContext, emitter);
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            log.error("Error in answerWithRagAndVideosStreaming", e);
+            try {
+                emitter.send(SseEmitter.event()
+                    .name("error")
+                    .data("Sorry, I couldn't process your request right now."));
+            } catch (IOException ioException) {
+                log.error("Error sending error message", ioException);
+            }
+        }
+    }
+
+    // NON-STREAMING version - returns complete response at once
+    public String answerWithRagNonStreaming(String userId, String question) {
+        try {
+            List<Double> embedding = getHuggingFaceEmbedding(question);
+            String context = queryPinecone(userId, embedding);
+
+            // Fetch user info
+            User user = userRepository.findById(Long.valueOf(userId)).orElse(null);
+            StringBuilder profileContext = new StringBuilder();
+            if (user != null) {
+                profileContext.append("You are assisting ").append(user.getName()).append(".\n");
+                if (user.getInjuryType() != null && !user.getInjuryType().isEmpty()) {
+                    profileContext.append("They have a ").append(user.getInjuryType()).append(" injury.\n");
+                }
+                if (user.getInjuryDescription() != null && !user.getInjuryDescription().isEmpty()) {
+                    profileContext.append("Injury details: ").append(user.getInjuryDescription()).append(".\n");
+                }
+                if (user.getFitnessGoal() != null && !user.getFitnessGoal().isEmpty()) {
+                    profileContext.append("Their fitness goal is ").append(user.getFitnessGoal()).append(".\n");
+                }
+                profileContext.append("\nPrevious conversation context:\n");
+            }
+
+            String fullContext = profileContext.toString() + context;
+            
+            // Call OpenAI without streaming
+            return callOpenAINonStreaming(question, fullContext);
+            
+        } catch (Exception e) {
+            log.error("Error in answerWithRagNonStreaming", e);
+            return "Sorry, I couldn't process your request right now.";
         }
     }
 
@@ -308,6 +386,104 @@ public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, i
 
         ChatCompletionResult result = service.createChatCompletion(request);
         return result.getChoices().get(0).getMessage().getContent();
+    }
+
+    // Streaming version of callOpenAI
+    private void callOpenAIStreaming(String question, String prompt, SseEmitter emitter) {
+        OpenAiService service = new OpenAiService(openAiApiKey);
+
+        ChatMessage systemMessage = new ChatMessage("system", "You are a helpful rehab assistant speaking directly to the user. Use the provided context about the user to personalize your responses. Always respond in second person (using 'you/your'). Format your responses using markdown for better readability. Use:\n- **bold** for emphasis\n- Lists for steps or points\n- ## Headers for sections\n- `code blocks` for exercises or specific terms");
+        ChatMessage userMessage = new ChatMessage("user", prompt + "\n\nUser's question: " + question);
+
+        ChatCompletionRequest request = ChatCompletionRequest.builder()
+            .model("gpt-3.5-turbo")
+            .messages(List.of(systemMessage, userMessage))
+            .maxTokens(512)
+            .temperature(0.2)
+            .stream(true)
+            .build();
+
+        try {
+            service.streamChatCompletion(request)
+                .doOnError(error -> {
+                    log.error("Error streaming chat completion", error);
+                    try {
+                        emitter.send(SseEmitter.event()
+                            .name("error")
+                            .data("Error processing request"));
+                        emitter.complete();
+                    } catch (IOException e) {
+                        log.error("Error sending error event", e);
+                    }
+                })
+                .doOnComplete(() -> {
+                    try {
+                        emitter.send(SseEmitter.event()
+                            .name("done")
+                            .data("[DONE]"));
+                    } catch (IOException e) {
+                        log.error("Error sending completion event", e);
+                    }
+                })
+                .blockingForEach(chunk -> {
+                    try {
+                        if (chunk.getChoices() != null && !chunk.getChoices().isEmpty()) {
+                            var delta = chunk.getChoices().get(0).getMessage();
+                            if (delta != null && delta.getContent() != null) {
+                                String content = delta.getContent();
+                                
+                                // Add space before content if it's a word (not punctuation/markdown)
+                                // This fixes OpenAI streaming which doesn't include spaces between tokens
+                                if (content.length() > 0 && !content.matches("^[\\s.,!?;:\\-*#`\\[\\]()_~\\n].*")) {
+                                    content = " " + content;
+                                }
+                                
+                                log.info("Sending chunk: [{}]", content); // Debug logging
+                                emitter.send(SseEmitter.event()
+                                    .name("message")
+                                    .data(content));
+                            }
+                        }
+                    } catch (IOException e) {
+                        log.error("Error sending chunk", e);
+                        throw new RuntimeException(e);
+                    }
+                });
+        } catch (Exception e) {
+            log.error("Error in streaming completion", e);
+            try {
+                emitter.send(SseEmitter.event()
+                    .name("error")
+                    .data("Error during streaming"));
+                emitter.complete();
+            } catch (IOException ioException) {
+                log.error("Error sending error event", ioException);
+            }
+        } finally {
+            service.shutdownExecutor();
+        }
+    }
+
+    // NON-STREAMING version of callOpenAI
+    private String callOpenAINonStreaming(String question, String prompt) {
+        OpenAiService service = new OpenAiService(openAiApiKey);
+
+        ChatMessage systemMessage = new ChatMessage("system", "You are a helpful rehab assistant speaking directly to the user. Use the provided context about the user to personalize your responses. Always respond in second person (using 'you/your'). Format your responses using markdown for better readability. Use:\n- **bold** for emphasis\n- Lists for steps or points\n- ## Headers for sections\n- `code blocks` for exercises or specific terms");
+        ChatMessage userMessage = new ChatMessage("user", prompt + "\n\nUser's question: " + question);
+
+        ChatCompletionRequest request = ChatCompletionRequest.builder()
+            .model("gpt-3.5-turbo")
+            .messages(List.of(systemMessage, userMessage))
+            .maxTokens(512)
+            .temperature(0.2)
+            .build();
+
+        try {
+            ChatCompletionResult result = service.createChatCompletion(request);
+            return result.getChoices().get(0).getMessage().getContent();
+        } finally {
+            service.shutdownExecutor();
+        }
     }
 
     // --- DASHBOARD DATA ---

@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import java.util.Map;
@@ -117,62 +119,99 @@ public class AuthController {
 
     @PostMapping("/google")
     public ResponseEntity<?> googleAuth(@RequestBody GoogleTokenRequest request) {
+        System.out.println("=== GOOGLE AUTH DEBUG ===");
+        System.out.println("Request: " + request);
+        
         try {
             // Validate request
             if (request.getToken() == null || request.getToken().trim().isEmpty()) {
+                System.out.println("ERROR: Token is null or empty");
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("message", "Google token is required"));
             }
 
-            // Verify the Google token
+            if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+                System.out.println("ERROR: Email is null or empty");
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Email is required"));
+            }
+
+            System.out.println("Token: " + request.getToken().substring(0, Math.min(20, request.getToken().length())) + "...");
+            System.out.println("Email: " + request.getEmail());
+            System.out.println("Name: " + request.getName());
+
+            // Verify the Google access token by calling Google's tokeninfo endpoint
             String token = request.getToken();
-            GoogleIdTokenVerifier verifier = new GoogleIdTokenVerifier.Builder(transport, jsonFactory)
-                .setAudience(Collections.singletonList(googleClientId))
-                .build();
+            String tokenInfoUrl = "https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token;
+            
+            System.out.println("Calling Google tokeninfo API...");
+            RestTemplate restTemplate = new RestTemplate();
+            ResponseEntity<Map> tokenInfoResponse = restTemplate.getForEntity(tokenInfoUrl, Map.class);
+            
+            System.out.println("Google API Response Status: " + tokenInfoResponse.getStatusCode());
+            System.out.println("Google API Response Body: " + tokenInfoResponse.getBody());
+            
+            if (!tokenInfoResponse.getStatusCode().is2xxSuccessful()) {
+                System.out.println("ERROR: Google API returned non-2xx status");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Invalid Google token"));
+            }
 
-            GoogleIdToken idToken = verifier.verify(token);
-            if (idToken != null) {
-                GoogleIdToken.Payload payload = idToken.getPayload();
-                String email = payload.getEmail();
-
-                if (email == null || email.trim().isEmpty()) {
-                    return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(Map.of("message", "Invalid Google token: no email found"));
-                }
-
-                // Find or create user
-                User user = userRepository.findByEmail(email)
-                    .orElseGet(() -> {
-                        User newUser = new User();
-                        newUser.setEmail(email);
-                        newUser.setName((String) payload.get("name"));
-                        return userRepository.save(newUser);
-                    });
-
-                // Upsert user's name for personalization
-                ragService.upsertUserProfile(
-                    user.getId().toString(), 
-                    user.getName(), 
-                    user.getInjuryType(), 
-                    user.getFitnessGoal()
-                );
-
-                String jwt = jwtUtil.generateToken(email);
-                return ResponseEntity.ok(new TokenResponse(jwt));
+            Map<String, Object> tokenInfo = tokenInfoResponse.getBody();
+            if (tokenInfo == null) {
+                System.out.println("ERROR: Google API returned null body");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Invalid Google token response"));
             }
             
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("message", "Invalid Google token"));
+            String tokenEmail = (String) tokenInfo.get("email");
+            System.out.println("Token email from Google: " + tokenEmail);
+            
+            // Verify the email matches
+            if (tokenEmail == null || !request.getEmail().equalsIgnoreCase(tokenEmail)) {
+                System.out.println("ERROR: Email mismatch - Request: " + request.getEmail() + ", Token: " + tokenEmail);
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Email mismatch"));
+            }
+
+            System.out.println("Finding or creating user...");
+            // Find or create user
+            User user = userRepository.findByEmail(request.getEmail())
+                .orElseGet(() -> {
+                    System.out.println("Creating new user for: " + request.getEmail());
+                    User newUser = new User();
+                    newUser.setEmail(request.getEmail());
+                    newUser.setName(request.getName() != null ? request.getName() : request.getEmail());
+                    return userRepository.save(newUser);
+                });
+
+            System.out.println("User found/created: " + user.getId());
+
+            // Upsert user's name for personalization
+            ragService.upsertUserProfile(
+                user.getId().toString(), 
+                user.getName(), 
+                user.getInjuryType(), 
+                user.getFitnessGoal()
+            );
+
+            System.out.println("Generating JWT...");
+            String jwt = jwtUtil.generateToken(request.getEmail());
+            System.out.println("SUCCESS: JWT generated");
+            return ResponseEntity.ok(new TokenResponse(jwt));
                 
-        } catch (GeneralSecurityException e) {
+        } catch (HttpClientErrorException e) {
+            System.out.println("ERROR: HttpClientErrorException");
+            e.printStackTrace();
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("message", "Google token verification failed: " + e.getMessage()));
-        } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", "Network error during Google token verification: " + e.getMessage()));
+                .body(Map.of("message", "Invalid Google token: " + e.getMessage()));
         } catch (Exception e) {
+            System.out.println("ERROR: Exception - " + e.getClass().getName());
+            System.out.println("ERROR Message: " + e.getMessage());
+            e.printStackTrace();
+            String errorMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("message", "Google authentication failed: " + e.getMessage()));
+                .body(Map.of("message", "Google authentication failed: " + errorMsg));
         }
     }
 

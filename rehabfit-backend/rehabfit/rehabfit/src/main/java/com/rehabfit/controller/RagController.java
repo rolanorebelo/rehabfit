@@ -5,10 +5,13 @@ import com.rehabfit.service.RagService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/rag")
@@ -37,6 +40,34 @@ public ResponseEntity<?> chat(@RequestBody Map<String, String> body, @RequestHea
     String userId = ragService.getUserIdFromAuthHeader(authHeader);
     Map<String, Object> llmResponse = ragService.answerWithRagAndVideos(userId, question);
     return ResponseEntity.ok(llmResponse);
+}
+
+@PostMapping("/chat/simple")
+public ResponseEntity<?> chatSimple(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
+    String question = body.get("question");
+    String userId = ragService.getUserIdFromAuthHeader(authHeader);
+    String answer = ragService.answerWithRagNonStreaming(userId, question);
+    return ResponseEntity.ok(Map.of("answer", answer));
+}
+
+@PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+public SseEmitter chatStream(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
+    String question = body.get("question");
+    String userId = ragService.getUserIdFromAuthHeader(authHeader);
+    
+    SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
+    
+    // Process in a separate thread to not block
+    new Thread(() -> {
+        try {
+            ragService.answerWithRagAndVideosStreaming(userId, question, emitter);
+            emitter.complete();
+        } catch (Exception e) {
+            emitter.completeWithError(e);
+        }
+    }).start();
+    
+    return emitter;
 }
 
 @GetMapping("/dashboard")

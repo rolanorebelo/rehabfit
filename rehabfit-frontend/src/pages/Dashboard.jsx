@@ -159,26 +159,74 @@ export default function DashboardPage() {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  const fetchDashboardData = () => {
-    API.get("/api/rag/dashboard")
-      .then((res) => {
-          console.log("Dashboard API response:", res.data); // <-- Add this line
-        setEstimatedRecovery(res.data.estimatedRecovery || "N/A");
-        setDietPlan(res.data.dietPlan || []);
-        setLlmSummary(res.data.llmSummary || []);
-        setProgressData(res.data.progressData || []);
-        setRecoveryPercentage(res.data.recoveryPercentage || 0);
+  const fetchDashboardData = async () => {
+    try {
+      const res = await API.get("/api/rag/dashboard");
+      console.log("Dashboard API response:", res.data);
+      
+      setEstimatedRecovery(res.data.estimatedRecovery || "N/A");
+      setDietPlan(res.data.dietPlan || []);
+      setLlmSummary(res.data.llmSummary || []);
+      setProgressData(res.data.progressData || []);
+      setRecoveryPercentage(res.data.recoveryPercentage || 0);
+      
+      // Set videos from backend
+      if (res.data.videos && res.data.videos.length > 0) {
+        setRecommendedVideos(res.data.videos);
+      } else {
+        // If no videos from backend, fetch default ones
+        await fetchDefaultVideos();
+      }
+      
+      // Calculate enhanced stats
+      calculateEnhancedStats(res.data.progressData || []);
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+      toast.error('Failed to load dashboard data.', { autoClose: 3000 });
+      // Fetch default videos on error too
+      await fetchDefaultVideos();
+    }
+  };
 
-        // Add this line:
-      setRecommendedVideos(res.data.videos || []);
-        
-        // Calculate enhanced stats
-        calculateEnhancedStats(res.data.progressData || []);
-      })
-      .catch((err) => {
-        console.error(err);
-        toast.error('Failed to load dashboard data.', { autoClose: 3000 });
-      });
+  const fetchDefaultVideos = async () => {
+    console.log("Fetching default videos...");
+    try {
+      const keywords = ["back pain relief exercises", "rehabilitation exercises", "injury recovery workout"];
+      const allVideos = [];
+      
+      for (const keyword of keywords) {
+        try {
+          console.log(`Fetching videos for: ${keyword}`);
+          const response = await API.get(`/api/rag/test-youtube?query=${encodeURIComponent(keyword)}`);
+          console.log(`Videos for "${keyword}":`, response.data);
+          if (response.data.urls && response.data.urls.length > 0) {
+            allVideos.push(...response.data.urls.slice(0, 2)); // 2 videos per keyword
+          }
+        } catch (err) {
+          console.error(`Error fetching videos for "${keyword}":`, err);
+        }
+      }
+      
+      console.log("Total videos fetched:", allVideos.length);
+      
+      // If no videos from API (quota exceeded), use fallback videos
+      if (allVideos.length === 0) {
+        console.log("Using fallback videos (YouTube API quota exceeded)");
+        const fallbackVideos = [
+          { title: "10 Min Lower Back Pain Relief Stretches", url: "https://www.youtube.com/watch?v=DWmGArQBtFI" },
+          { title: "Complete Back Rehabilitation Program", url: "https://www.youtube.com/watch?v=4BOTvaRaDjI" },
+          { title: "Physical Therapy Exercises for Back Pain", url: "https://www.youtube.com/watch?v=vp7ZxUk3vY4" },
+          { title: "Core Strengthening Exercises", url: "https://www.youtube.com/watch?v=L_xrDAtykMI" },
+          { title: "Beginner Rehab Workout Routine", url: "https://www.youtube.com/watch?v=RqcOCBb4arc" },
+          { title: "Injury Recovery Stretching Guide", url: "https://www.youtube.com/watch?v=g_tea8ZNk5A" }
+        ];
+        setRecommendedVideos(fallbackVideos);
+      } else {
+        setRecommendedVideos(allVideos);
+      }
+    } catch (error) {
+      console.error("Error fetching default videos:", error);
+    }
   };
 
   const calculateEnhancedStats = (data) => {
