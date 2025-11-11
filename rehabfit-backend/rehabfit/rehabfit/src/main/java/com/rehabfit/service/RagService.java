@@ -216,11 +216,12 @@ public class RagService {
         }
     }
 
-    // Use HuggingFace all-MiniLM-L6-v2 embedding via local Python service
+    // Use HuggingFace all-MiniLM-L6-v2 embedding via Railway Python service
     public List<Double> getHuggingFaceEmbedding(String text) {
         try {
             RestTemplate restTemplate = new RestTemplate();
-            String url = "http://rehabfit-embedding:5005/embed";
+            // Use Railway internal networking
+            String url = "http://skillful-success.railway.internal:5005/embed";
             Map<String, String> request = Map.of("text", text);
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
             List<Double> embedding = (List<Double>) response.getBody().get("embedding");
