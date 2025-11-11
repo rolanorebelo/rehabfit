@@ -14,6 +14,7 @@ public class WebConfig {
             .allowedOriginPatterns(
                 "http://localhost:3001",
                 "http://localhost:3000",
+                "https://rehabfit.vercel.app",
                 "https://*.railway.app",
                 "https://*.vercel.app",
                 "https://*.netlify.app"
