@@ -15,7 +15,7 @@ import {
   Pie,
   Cell
 } from "recharts";
-import { Calendar, TrendingUp, TrendingDown, Plus, Activity, Heart, Zap, Target, Award, AlertCircle } from "lucide-react";
+import { Calendar, TrendingUp, TrendingDown, Plus, Activity, Heart, Target, Award, AlertCircle } from "lucide-react";
 import API from "../api/axios";
 import { toast } from "react-toastify";
 
