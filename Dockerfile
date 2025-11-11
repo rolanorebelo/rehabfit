@@ -8,6 +8,9 @@ COPY rehabfit-backend/rehabfit/rehabfit/.mvn .mvn
 COPY rehabfit-backend/rehabfit/rehabfit/mvnw .
 COPY rehabfit-backend/rehabfit/rehabfit/pom.xml .
 
+# Make mvnw executable
+RUN chmod +x mvnw
+
 # Download dependencies (cached layer)
 RUN ./mvnw dependency:go-offline
 
