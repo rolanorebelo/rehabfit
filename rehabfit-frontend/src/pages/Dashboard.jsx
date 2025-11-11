@@ -338,7 +338,7 @@ export default function DashboardPage() {
       });
 
     fetchDashboardData();
-  }, [navigate]);
+  }, [navigate, fetchDashboardData]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
