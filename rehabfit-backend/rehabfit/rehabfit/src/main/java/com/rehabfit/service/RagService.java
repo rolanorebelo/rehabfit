@@ -218,12 +218,23 @@ public class RagService {
 
     // Use HuggingFace all-MiniLM-L6-v2 embedding via local Python service
     public List<Double> getHuggingFaceEmbedding(String text) {
-        RestTemplate restTemplate = new RestTemplate();
-        String url = "http://rehabfit-embedding:5005/embed";
-        Map<String, String> request = Map.of("text", text);
-        ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
-        List<Double> embedding = (List<Double>) response.getBody().get("embedding");
-        return embedding;
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            String url = "http://rehabfit-embedding:5005/embed";
+            Map<String, String> request = Map.of("text", text);
+            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+            List<Double> embedding = (List<Double>) response.getBody().get("embedding");
+            return embedding;
+        } catch (Exception e) {
+            // Embedding service unavailable - return dummy embedding or use fallback
+            System.err.println("Embedding service unavailable: " + e.getMessage());
+            // Return a dummy 384-dimensional embedding (all-MiniLM-L6-v2 dimension)
+            List<Double> dummyEmbedding = new ArrayList<>();
+            for (int i = 0; i < 384; i++) {
+                dummyEmbedding.add(0.0);
+            }
+            return dummyEmbedding;
+        }
     }
 
     public void deleteAllFromPinecone() {
