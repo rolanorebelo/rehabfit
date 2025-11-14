@@ -38,7 +38,8 @@ public class SecurityConfig {
                     "/auth/register",
                     "/auth/login",
                     "/auth/google",
-                    "/api/rag/chat/**"
+                    "/api/rag/chat/**",
+                    "/api/rag/test-youtube"
                 ).permitAll()
                 .requestMatchers(
                     "/auth/profile",
