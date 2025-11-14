@@ -10,7 +10,9 @@ services:
     dockerContext: .
     healthCheckPath: /api/rag/test-youtube
     startCommand: |
+      echo "Converting database URL..."
       export JDBC_DATABASE_URL=$(echo $DATABASE_URL | sed -e 's/postgres:/jdbc:postgresql:/')
+      echo "JDBC_DATABASE_URL: $JDBC_DATABASE_URL"
       java -jar app.jar
     envVars:
       - key: DATABASE_URL
