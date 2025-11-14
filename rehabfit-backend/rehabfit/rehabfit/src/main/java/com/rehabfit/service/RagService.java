@@ -423,6 +423,21 @@ public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, i
         }
     } catch (Exception e) {
         System.out.println("YouTube API error: " + e.getMessage());
+        
+        // Check if it's an HTTP error (like 403 quota exceeded)
+        if (e instanceof org.springframework.web.client.HttpClientErrorException) {
+            org.springframework.web.client.HttpClientErrorException httpError = (org.springframework.web.client.HttpClientErrorException) e;
+            System.out.println("HTTP Error Status: " + httpError.getStatusCode());
+            System.out.println("HTTP Error Response: " + httpError.getResponseBodyAsString());
+            
+            // Check if it's quota exceeded
+            if (httpError.getStatusCode().value() == 403 && 
+                httpError.getResponseBodyAsString().contains("quotaExceeded")) {
+                videos.add(Map.of("title", "YouTube API Quota Exceeded", "url", ""));
+                return videos;
+            }
+        }
+        
         e.printStackTrace();
     }
 
