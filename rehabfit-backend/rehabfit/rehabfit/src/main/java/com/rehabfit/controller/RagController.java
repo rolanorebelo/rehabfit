@@ -85,7 +85,7 @@ public ResponseEntity<?> deleteAllPinecone() {
 
 @GetMapping("/test-youtube")
 public ResponseEntity<?> testYouTube(@RequestParam String query) {
-    List<Map<String, String>> urls = ragService.getYouTubeVideos(query, youtubeApiKey, 0);
+    List<Map<String, String>> urls = ragService.getYouTubeVideos(query, youtubeApiKey, 5);
     return ResponseEntity.ok(Map.of("urls", urls));
 }
 }

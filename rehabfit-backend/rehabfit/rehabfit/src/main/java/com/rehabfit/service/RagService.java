@@ -364,6 +364,9 @@ public class RagService {
 
     @SuppressWarnings("unchecked")
 public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, int maxResults) {
+    // Default to 5 results if maxResults is 0 or invalid
+    if (maxResults <= 0) maxResults = 5;
+
     String apiUrl = "https://www.googleapis.com/youtube/v3/search"
         + "?part=snippet"
         + "&maxResults=" + maxResults
@@ -373,11 +376,26 @@ public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, i
 
     RestTemplate restTemplate = new RestTemplate();
     List<Map<String, String>> videos = new ArrayList<>();
+
     try {
+        System.out.println("YouTube API call: " + apiUrl.replace(apiKey, "[API_KEY]"));
         Map<String, Object> response = restTemplate.getForObject(apiUrl, Map.class);
-        if (response == null) return videos;
+
+        if (response == null) {
+            System.out.println("YouTube API returned null response");
+            return videos;
+        }
+
+        // Check for API errors
+        if (response.containsKey("error")) {
+            Map<String, Object> error = (Map<String, Object>) response.get("error");
+            System.out.println("YouTube API error: " + error);
+            return videos;
+        }
+
         List<Map<String, Object>> items = (List<Map<String, Object>>) response.get("items");
         if (items != null && !items.isEmpty()) {
+            System.out.println("YouTube API returned " + items.size() + " items");
             for (Map<String, Object> item : items) {
                 Map<String, Object> id = (Map<String, Object>) item.get("id");
                 Map<String, Object> snippet = (Map<String, Object>) item.get("snippet");
@@ -387,10 +405,15 @@ public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, i
                     videos.add(Map.of("title", title, "url", "https://www.youtube.com/watch?v=" + videoId));
                 }
             }
+        } else {
+            System.out.println("YouTube API returned no items");
         }
     } catch (Exception e) {
         System.out.println("YouTube API error: " + e.getMessage());
+        e.printStackTrace();
     }
+
+    System.out.println("Returning " + videos.size() + " videos for query: " + query);
     return videos;
 }
 
