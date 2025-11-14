@@ -1,0 +1,46 @@
+services:
+  # RehabFit Backend API
+  - type: web
+    name: rehabfit-backend
+    runtime: docker
+    repo: https://github.com/rolanorebelo/rehabfit
+    region: oregon
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/rag/test-youtube
+    envVars:
+      - key: JDBC_DATABASE_URL
+        fromDatabase:
+          name: rehabfit-db
+          property: connectionString
+      - key: DB_USERNAME
+        fromDatabase:
+          name: rehabfit-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: rehabfit-db
+          property: password
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_ENVIRONMENT
+        sync: false
+      - key: PINECONE_INDEX
+        sync: false
+      - key: PINECONE_PROJECT
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://rehabfit.vercel.app
+
+databases:
+  # PostgreSQL Database
+  - name: rehabfit-db
+    databaseName: rehabfit
+    user: rehabfit_user
+    region: oregon
+    plan: free
