@@ -51,6 +51,9 @@ public class RagService {
     @Value("${youtube.api.key}")
     private String youtubeApiKey;
 
+    @Value("${embedding.service.url:http://localhost:5005}")
+    private String embeddingServiceUrl;
+
     @Autowired
     private UserRepository userRepository;
 
@@ -220,8 +223,8 @@ public class RagService {
     public List<Double> getHuggingFaceEmbedding(String text) {
         try {
             RestTemplate restTemplate = new RestTemplate();
-            // Use Railway internal networking
-            String url = "http://skillful-success.railway.internal:5005/embed";
+            // Use configurable embedding service URL
+            String url = embeddingServiceUrl + "/embed";
             Map<String, String> request = Map.of("text", text);
             ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
             List<Double> embedding = (List<Double>) response.getBody().get("embedding");

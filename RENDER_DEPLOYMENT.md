@@ -22,13 +22,15 @@ PINECONE_ENVIRONMENT=aped-4627-b74a
 PINECONE_INDEX=rehabfit
 PINECONE_PROJECT=6hwstht
 YOUTUBE_API_KEY=your_youtube_api_key
+EMBEDDING_SERVICE_URL=http://rehabfit-embedding:5005
 ```
 
 ### 3. Deploy
 1. Click "Create Blueprint" in Render
 2. Render will automatically create:
    - PostgreSQL database (`rehabfit-db`)
-   - Web service (`rehabfit-backend`)
+   - Backend web service (`rehabfit-backend`)
+   - Embedding service (`rehabfit-embedding`)
 3. Wait for deployment to complete (usually 5-10 minutes)
 
 ### 4. Get the Backend URL
@@ -40,7 +42,25 @@ Update your frontend's `.env` file or Vercel environment variables:
 REACT_APP_API_URL=https://rehabfit-backend.onrender.com
 ```
 
-## Troubleshooting
+## Services Overview
+
+### Backend Service (`rehabfit-backend`)
+- **Framework**: Spring Boot (Java)
+- **Purpose**: Main API server handling user authentication, RAG queries, and dashboard data
+- **Port**: 8080
+- **Health Check**: `/api/rag/test-youtube`
+
+### Embedding Service (`rehabfit-embedding`)
+- **Framework**: Flask (Python)
+- **Purpose**: Provides sentence embeddings using HuggingFace `all-MiniLM-L6-v2` model
+- **Port**: 5005
+- **Health Check**: `/embed`
+- **Model**: Downloads ~90MB model on first startup (may take time)
+
+### Database (`rehabfit-db`)
+- **Type**: PostgreSQL
+- **Purpose**: Stores user data, progress logs, and authentication info
+- **Plan**: Free tier (256MB storage, 512MB RAM)
 
 ### Build Failures
 - Check the build logs in Render dashboard

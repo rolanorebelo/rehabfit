@@ -36,6 +36,22 @@ services:
         sync: false
       - key: CORS_ORIGINS
         value: https://rehabfit.vercel.app
+      - key: EMBEDDING_SERVICE_URL
+        value: http://rehabfit-embedding:5005
+
+  # RehabFit Embedding Service
+  - type: web
+    name: rehabfit-embedding
+    runtime: docker
+    repo: https://github.com/rolanorebelo/rehabfit
+    region: oregon
+    plan: free
+    dockerfilePath: ./rehabfit-embedding-service/Dockerfile
+    dockerContext: ./rehabfit-embedding-service
+    healthCheckPath: /embed
+    envVars:
+      - key: FLASK_ENV
+        value: production
 
 databases:
   # PostgreSQL Database
