@@ -390,6 +390,19 @@ public List<Map<String, String>> getYouTubeVideos(String query, String apiKey, i
         if (response.containsKey("error")) {
             Map<String, Object> error = (Map<String, Object>) response.get("error");
             System.out.println("YouTube API error: " + error);
+            
+            // Check if it's a quota exceeded error
+            Map<String, Object> errorDetails = (Map<String, Object>) error.get("errors");
+            if (errorDetails != null && !errorDetails.isEmpty()) {
+                Map<String, Object> firstError = (Map<String, Object>) ((List) errorDetails).get(0);
+                String reason = (String) firstError.get("reason");
+                if ("quotaExceeded".equals(reason)) {
+                    // Return a special video entry indicating quota exceeded
+                    videos.add(Map.of("title", "YouTube API Quota Exceeded", "url", ""));
+                    return videos;
+                }
+            }
+            
             return videos;
         }
 
