@@ -33,5 +33,6 @@ EXPOSE 8080
 
 # Run the application
 # Limit memory usage for Render free tier
-CMD ["java", "-Xmx320m", "-Xms128m", "-jar", "app.jar"]
+CMD ["sh", "-c", "java -Xmx320m -Xms128m -jar app.jar --server.port=$PORT"]
+
 
