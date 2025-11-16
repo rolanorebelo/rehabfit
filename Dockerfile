@@ -32,4 +32,6 @@ COPY --from=build /app/target/rehabfit-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 8080
 
 # Run the application
-CMD ["java", "-jar", "app.jar"]
+# Limit memory usage for Render free tier
+CMD ["java", "-Xmx320m", "-Xms128m", "-jar", "app.jar"]
+
