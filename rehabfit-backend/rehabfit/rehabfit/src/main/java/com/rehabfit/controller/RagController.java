@@ -91,4 +91,8 @@ public ResponseEntity<?> testYouTube(@RequestParam(required = false) String quer
     List<Map<String, String>> urls = ragService.getYouTubeVideos(query, youtubeApiKey, 5);
     return ResponseEntity.ok(Map.of("urls", urls));
 }
+
+@GetMapping("/health")
+public String health() {
+    return "OK";
 }
