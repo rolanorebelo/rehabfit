@@ -9,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.MediaType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
@@ -28,13 +27,11 @@ public class RagController {
     @PostMapping("/upsert-chat")
     public ResponseEntity<?> upsertChat(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
         String message = body.get("message");
-
+        // Extract userId from JWT or session (implement this as needed)
         String userId = ragService.getUserIdFromAuthHeader(authHeader);
         String docId = UUID.randomUUID().toString();
-
         List<Double> embedding = ragService.getHuggingFaceEmbedding(message);
         ragService.upsertToPinecone(userId, docId, message, embedding, null);
-
         return ResponseEntity.ok().build();
     }
 
@@ -42,7 +39,6 @@ public class RagController {
     public ResponseEntity<?> chat(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
         String question = body.get("question");
         String userId = ragService.getUserIdFromAuthHeader(authHeader);
-
         Map<String, Object> llmResponse = ragService.answerWithRagAndVideos(userId, question);
         return ResponseEntity.ok(llmResponse);
     }
@@ -51,7 +47,6 @@ public class RagController {
     public ResponseEntity<?> chatSimple(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
         String question = body.get("question");
         String userId = ragService.getUserIdFromAuthHeader(authHeader);
-
         String answer = ragService.answerWithRagNonStreaming(userId, question);
         return ResponseEntity.ok(Map.of("answer", answer));
     }
@@ -63,6 +58,7 @@ public class RagController {
 
         SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
 
+        // Process in a separate thread to not block
         new Thread(() -> {
             try {
                 ragService.answerWithRagAndVideosStreaming(userId, question, emitter);
@@ -89,12 +85,14 @@ public class RagController {
     }
 
     @GetMapping("/test-youtube")
-    public ResponseEntity<?> testYouTube(@RequestParam String query) {
+    public ResponseEntity<?> testYouTube(@RequestParam(required = false) String query) {
+        if (query == null || query.isEmpty()) {
+            return ResponseEntity.ok("Health check successful");
+        }
         List<Map<String, String>> urls = ragService.getYouTubeVideos(query, youtubeApiKey, 5);
         return ResponseEntity.ok(Map.of("urls", urls));
     }
 
-    // Health check endpoint for Render
     @GetMapping("/health")
     public String health() {
         return "OK";
