@@ -51,9 +51,21 @@ export default function ChatbotAssistant({ onRecommendVideos, userId }) {
       }
     } catch (error) {
       console.error("Chat error:", error);
+      let errorMessage = "Sorry, I couldn't process your request.";
+      
+      if (error.response?.status === 401) {
+        errorMessage = "⚠️ OpenAI API key issue. Please check your API key configuration.";
+      } else if (error.response?.status === 429) {
+        errorMessage = "⚠️ API rate limit exceeded. Please try again in a moment.";
+      } else if (error.response?.status === 500) {
+        errorMessage = "⚠️ Server error. The backend service might be experiencing issues.";
+      } else if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        errorMessage = "⚠️ Request timeout. The server might be waking up (cold start). Please try again.";
+      }
+      
       setMessages((msgs) => [
         ...msgs,
-        { sender: "bot", text: "Sorry, I couldn't process your request." },
+        { sender: "bot", text: errorMessage },
       ]);
     }
     
