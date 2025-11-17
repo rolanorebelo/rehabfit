@@ -14,21 +14,22 @@ public class DataSourceConfig {
     @Bean
     @Primary
     public DataSource dataSource() {
-        // Get DATABASE_URL from environment
-        String databaseUrl = System.getenv("DATABASE_URL");
+        // Try JDBC_DATABASE_URL first (correct format), then DATABASE_URL (needs conversion)
+        String databaseUrl = System.getenv("JDBC_DATABASE_URL");
+        if (databaseUrl == null || databaseUrl.isEmpty()) {
+            databaseUrl = System.getenv("DATABASE_URL");
+        }
+        
         String username = System.getenv("DB_USERNAME");
         String password = System.getenv("DB_PASSWORD");
         
         // If DATABASE_URL exists, use it (Render deployment)
         if (databaseUrl != null && !databaseUrl.isEmpty()) {
-            // Convert postgres:// to jdbc:postgresql:// if needed
+            // Convert postgres:// or postgresql:// to jdbc:postgresql://
             if (databaseUrl.startsWith("postgres://")) {
                 databaseUrl = databaseUrl.replace("postgres://", "jdbc:postgresql://");
-            }
-            
-            // Ensure it starts with jdbc:
-            if (!databaseUrl.startsWith("jdbc:")) {
-                throw new IllegalStateException("DATABASE_URL must start with 'jdbc:' but was: " + databaseUrl);
+            } else if (databaseUrl.startsWith("postgresql://")) {
+                databaseUrl = "jdbc:" + databaseUrl;
             }
             
             // Build DataSource directly with Hikari
