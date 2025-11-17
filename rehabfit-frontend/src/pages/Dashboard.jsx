@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import API from "../api/axios";
 import ChatbotAssistant from "../components/ChatbotAssistant";
 import ProgressTracker from "../components/ProgressTracker";
+import useKeepAlive from "../hooks/useKeepAlive";
 import { 
   Activity, 
   Brain, 
@@ -127,6 +128,10 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("overview");
+  
+  // Enable keep-alive to prevent backend cold starts
+  useKeepAlive();
+  
   const [recommendedVideos, setRecommendedVideos] = useState(() => {
     const saved = localStorage.getItem(LOCAL_STORAGE_VIDEOS_KEY);
     return saved ? JSON.parse(saved) : [];

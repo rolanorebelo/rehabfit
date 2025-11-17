@@ -24,6 +24,9 @@ public class AuthService {
     @Autowired
     private JWTUtil jwtUtil;
 
+    @Autowired
+    private EmailService emailService;
+
     public User register(User user) {
         if (userRepository.findByEmail(user.getEmail()).isPresent()) {
             throw new RuntimeException("Email already registered");
@@ -62,10 +65,8 @@ public class AuthService {
         
         userRepository.save(user);
         
-        // In production, you would send an email here with the reset link
-        // For now, we'll just log it (the frontend will show instructions)
-        System.out.println("Password reset token for " + email + ": " + resetToken);
-        System.out.println("Reset link: http://localhost:3000/reset-password?token=" + resetToken);
+        // Send password reset email
+        emailService.sendPasswordResetEmail(email, resetToken);
     }
 
     public void resetPassword(String token, String newPassword) {

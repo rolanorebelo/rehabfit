@@ -38,6 +38,20 @@ services:
         value: https://rehabfit.vercel.app
       - key: EMBEDDING_SERVICE_URL
         value: https://rehabfit-embedding.onrender.com
+      - key: FRONTEND_URL
+        value: https://rehabfit.vercel.app
+      - key: MAIL_ENABLED
+        value: "false"
+      - key: MAIL_HOST
+        sync: false
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_USERNAME
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: app.keepalive.enabled
+        value: "true"
 
   # RehabFit Embedding Service
   - type: web
