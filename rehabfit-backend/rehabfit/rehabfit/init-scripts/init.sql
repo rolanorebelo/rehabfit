@@ -1,1 +1,3 @@
-CREATE ROLE rolano WITH LOGIN PASSWORD 'rolano123';
+-- Create the rehabfitdb database
+CREATE DATABASE rehabfitdb;
+

@@ -38,6 +38,7 @@ public class SecurityConfig {
                     "/auth/register",
                     "/auth/login",
                     "/auth/google",
+                    "/api/rag/health",
                     "/api/rag/chat/**",
                     "/api/rag/test-youtube"
                 ).permitAll()

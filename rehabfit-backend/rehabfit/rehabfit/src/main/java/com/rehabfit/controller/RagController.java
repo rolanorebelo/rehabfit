@@ -26,7 +26,7 @@ public class RagController {
 
     @PostMapping("/upsert-chat")
     public ResponseEntity<?> upsertChat(@RequestBody Map<String, String> body, @RequestHeader("Authorization") String authHeader) {
-        String message = body.get("message");
+        String message = body.get("message");     
         // Extract userId from JWT or session (implement this as needed)
         String userId = ragService.getUserIdFromAuthHeader(authHeader);
         String docId = UUID.randomUUID().toString();

@@ -8,17 +8,17 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /api/rag/test-youtube
+    healthCheckPath: /api/rag/health
     envVars:
-      - key: DATABASE_URL
+      - key: SPRING_DATASOURCE_URL
         fromDatabase:
           name: rehabfit-db
           property: connectionString
-      - key: DB_USERNAME
+      - key: SPRING_DATASOURCE_USERNAME
         fromDatabase:
           name: rehabfit-db
           property: user
-      - key: DB_PASSWORD
+      - key: SPRING_DATASOURCE_PASSWORD
         fromDatabase:
           name: rehabfit-db
           property: password
