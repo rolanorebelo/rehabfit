@@ -10,15 +10,15 @@ services:
     dockerContext: .
     healthCheckPath: /api/rag/health
     envVars:
-      - key: SPRING_DATASOURCE_URL
+      - key: DATABASE_URL
         fromDatabase:
           name: rehabfit-db
           property: connectionString
-      - key: SPRING_DATASOURCE_USERNAME
+      - key: DB_USERNAME
         fromDatabase:
           name: rehabfit-db
           property: user
-      - key: SPRING_DATASOURCE_PASSWORD
+      - key: DB_PASSWORD
         fromDatabase:
           name: rehabfit-db
           property: password
