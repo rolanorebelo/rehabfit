@@ -335,6 +335,62 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        try {
+            if (request.getEmail() == null || request.getEmail().trim().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Email is required"));
+            }
+
+            authService.initiatePasswordReset(request.getEmail());
+            
+            // Always return success even if email doesn't exist (security best practice)
+            return ResponseEntity.ok(Map.of(
+                "message", "If an account exists with this email, you will receive password reset instructions."
+            ));
+            
+        } catch (Exception e) {
+            // Don't reveal whether email exists
+            return ResponseEntity.ok(Map.of(
+                "message", "If an account exists with this email, you will receive password reset instructions."
+            ));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        try {
+            if (request.getToken() == null || request.getToken().trim().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Reset token is required"));
+            }
+            
+            if (request.getNewPassword() == null || request.getNewPassword().trim().isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "New password is required"));
+            }
+            
+            if (request.getNewPassword().length() < 6) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("message", "Password must be at least 6 characters long"));
+            }
+
+            authService.resetPassword(request.getToken(), request.getNewPassword());
+            
+            return ResponseEntity.ok(Map.of(
+                "message", "Password has been reset successfully. You can now log in with your new password."
+            ));
+            
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("message", "Password reset failed. Please try again."));
+        }
+    }
+
     // Data Transfer Objects (DTOs)
     @Data
     @NoArgsConstructor
@@ -393,5 +449,20 @@ public class AuthController {
                    (activityLevel != null && !activityLevel.trim().isEmpty()) ||
                    (injuryDescription != null);
         }
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ForgotPasswordRequest {
+        private String email;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ResetPasswordRequest {
+        private String token;
+        private String newPassword;
     }
 }

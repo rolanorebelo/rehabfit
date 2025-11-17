@@ -54,6 +54,11 @@ public class User {
     
     private LocalDate injuryDate;
 
+    // Password reset fields
+    private String resetToken;
+    
+    private LocalDateTime resetTokenExpiry;
+
     @ElementCollection
     @CollectionTable(
         name = "user_equipment_list",

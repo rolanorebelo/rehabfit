@@ -38,6 +38,8 @@ public class SecurityConfig {
                     "/auth/register",
                     "/auth/login",
                     "/auth/google",
+                    "/auth/forgot-password",
+                    "/auth/reset-password",
                     "/api/rag/health",
                     "/api/rag/chat/**",
                     "/api/rag/test-youtube"
