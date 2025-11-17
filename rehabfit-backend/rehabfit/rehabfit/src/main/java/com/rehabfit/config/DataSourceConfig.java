@@ -25,10 +25,49 @@ public class DataSourceConfig {
         
         // If DATABASE_URL exists, use it (Render deployment)
         if (databaseUrl != null && !databaseUrl.isEmpty()) {
-            // Convert postgres:// or postgresql:// to jdbc:postgresql://
-            if (databaseUrl.startsWith("postgres://")) {
-                databaseUrl = databaseUrl.replace("postgres://", "jdbc:postgresql://");
-            } else if (databaseUrl.startsWith("postgresql://")) {
+            // Parse and convert Render's postgres:// or postgresql:// URL format
+            if (databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://")) {
+                // Extract components: postgresql://user:pass@host/db or postgresql://user:pass@host:port/db
+                String urlWithoutScheme = databaseUrl.replaceFirst("^postgres(ql)?://", "");
+                
+                // Split into credentials@host/db
+                String[] parts = urlWithoutScheme.split("@", 2);
+                if (parts.length == 2) {
+                    String credentials = parts[0];
+                    String hostAndDb = parts[1];
+                    
+                    // Parse credentials
+                    String[] credParts = credentials.split(":", 2);
+                    if (credParts.length == 2) {
+                        username = credParts[0];
+                        password = credParts[1];
+                    }
+                    
+                    // Parse host:port/db or host/db (default port 5432)
+                    String host;
+                    String port = "5432";
+                    String database;
+                    
+                    String[] hostDbParts = hostAndDb.split("/", 2);
+                    if (hostDbParts.length == 2) {
+                        database = hostDbParts[1];
+                        String[] hostPortParts = hostDbParts[0].split(":", 2);
+                        host = hostPortParts[0];
+                        if (hostPortParts.length == 2) {
+                            port = hostPortParts[1];
+                        }
+                        
+                        // Render's internal database URLs need .render.com suffix added if not present
+                        if (!host.contains(".") && host.startsWith("dpg-")) {
+                            host = host + ".oregon-postgres.render.com";
+                        }
+                        
+                        // Rebuild as proper JDBC URL
+                        databaseUrl = String.format("jdbc:postgresql://%s:%s/%s", host, port, database);
+                    }
+                }
+            } else if (!databaseUrl.startsWith("jdbc:")) {
+                // If it doesn't start with jdbc: and isn't postgres://, prepend it
                 databaseUrl = "jdbc:" + databaseUrl;
             }
             
