@@ -37,7 +37,7 @@ services:
       - key: CORS_ORIGINS
         value: https://rehabfit.vercel.app
       - key: EMBEDDING_SERVICE_URL
-        value: http://rehabfit-embedding:5005
+        value: https://rehabfit-embedding.onrender.com
 
   # RehabFit Embedding Service
   - type: web
@@ -48,7 +48,7 @@ services:
     plan: free
     dockerfilePath: ./rehabfit-embedding-service/Dockerfile
     dockerContext: ./rehabfit-embedding-service
-    healthCheckPath: /embed
+    healthCheckPath: /health
     envVars:
       - key: FLASK_ENV
         value: production

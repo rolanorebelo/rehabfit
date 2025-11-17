@@ -1,9 +1,14 @@
 # Save as embed_service.py
+import os
 from sentence_transformers import SentenceTransformer
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 model = SentenceTransformer('all-MiniLM-L6-v2')
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({'status': 'ok'}), 200
 
 @app.route('/embed', methods=['POST'])
 def embed():
@@ -13,4 +18,5 @@ def embed():
     return jsonify({'embedding': embedding})
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5005)
+    port = int(os.environ.get('PORT', 5005))
+    app.run(host="0.0.0.0", port=port)
